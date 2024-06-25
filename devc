@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# devc - Dev Container CLI wrapper script
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
+DEVC_SUPPORT_IMAGE="devc-support:latest"
+VERBOSE=false
+
+# Function to log verbose messages
+verbose_log() {
+    if [ "$VERBOSE" = true ]; then
+        echo "VERBOSE: $1" >&2
+    fi
+}
+
+# Function to run a command in the devc-support container
+run_in_devc_support() {
+    verbose_log "Running in devc-support: $*"
+    docker run --rm -it \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "$PROJECT_DIR:$PROJECT_DIR" \
+        -e DOCKER_HOST="unix:///var/run/docker.sock" \
+        -e LOCAL_USER_ID="$(id -u)" \
+        -e LOCAL_GROUP_ID="$(id -g)" \
+        -e DEVC_VERBOSE="$VERBOSE" \
+        -e PROJECT_DIR="$PROJECT_DIR" \
+        -w "$PROJECT_DIR" \
+        "$DEVC_SUPPORT_IMAGE" \
+        "$@"
+}
+# Function to run devcontainer CLI
+run_devcontainer_cli() {
+    verbose_log "Running devcontainer CLI: $*"
+    run_in_devc_support devcontainer "$@"
+}
+
+# Function to print help
+print_help() {
+    echo "Usage: devc [-v|--verbose] [COMMAND] [ARGS...]"
+    echo
+    echo "Commands:"
+    echo "  help                 Print this help message"
+    echo "  down                 Stop and remove the dev container"
+    echo "  up                   Create and start the dev container"
+    echo "  exec <cmd> [args..]  Execute a command in the dev container"
+    echo "  devc-support-shell   Enter a shell in the devc-support container"
+    echo
+    echo "If no command is provided, it starts a bash shell in the dev container"
+    echo "Any other command is treated as an 'exec' command"
+    echo
+    echo "Options:"
+    echo "  -v, --verbose        Enable verbose logging"
+}
+
+# Parse verbose flag
+while [[ "$1" == -* ]]; do
+    case "$1" in
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+verbose_log "Command: $1"
+verbose_log "All args: $*"
+
+case "$1" in
+    help|-h|-help|--help)
+        print_help
+        ;;
+    down)
+        echo "Stopping and removing dev container..."
+        run_devcontainer_cli down
+        ;;
+    up)
+        echo "Creating and starting dev container..."
+        run_devcontainer_cli up --workspace-folder "$PROJECT_DIR"
+        ;;
+    exec)
+        shift
+        echo "Running command in dev container: $*"
+        run_devcontainer_cli up --workspace-folder "$PROJECT_DIR" && \
+        run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" "$@"
+        ;;
+    devc-support-shell)
+        echo "Entering devc-support shell for debugging..."
+        run_in_devc_support bash
+        ;;
+    "")
+        # No arguments, start a bash shell in the dev container
+        echo "Starting dev container and opening a bash shell..."
+        run_devcontainer_cli up --workspace-folder "$PROJECT_DIR" && \
+        run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" bash
+        ;;
+    *)
+        # Treat any unknown command as an 'exec' command
+        echo "Running command in dev container: $*"
+        run_devcontainer_cli up --workspace-folder "$PROJECT_DIR" && \
+        run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" "$@"
+        ;;
+esac

@@ -20,7 +20,18 @@ verbose_log() {
 # Function to run a command in the devc-support container
 run_in_devc_support() {
     verbose_log "Running in devc-support: $*"
-    docker run --rm -it \
+
+    if [ -t 0 ] && [ -t 1 ]; then
+        # We're in a TTY, use -it
+        verbose_log "Running in interactive mode with TTY"
+        terminal_opts="-it"
+    else
+        # Not in a TTY, use -i for stdin
+        verbose_log "Running in non-interactive mode"
+        terminal_opts="-i"
+    fi
+
+    docker run --rm "$terminal_opts" \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -e DOCKER_HOST="unix:///var/run/docker.sock" \
@@ -91,13 +102,10 @@ inspect_dev_container() {
 }
 
 exec_dev_container() {
-    if [ -f "$CONTAINER_ID_FILE" ]; then
-        container_id=$(cat "$CONTAINER_ID_FILE")
-        verbose_log "Executing command in dev container ($container_id): $*"
-        docker exec -i "$container_id" "$@"
-    else
-        echo "No running dev container found"
-    fi
+    # Use devcontainer cli for now since it does lots of magic with
+    # users and mounts, etc. It's slower but it works. Later can figure
+    # out how to optimise it.
+    run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" "$@"
 }
 
 # Function to print help
@@ -167,7 +175,7 @@ case "$1" in
         # No arguments, start a bash shell in the dev container
         verbose_log "Starting dev container and opening a bash shell..."
         ensure_dev_container_running
-        run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" bash
+        exec_dev_container bash
         ;;
     *)
         # Treat any unknown command as an 'exec' command

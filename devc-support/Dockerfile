@@ -1,14 +1,13 @@
-# devc-support/Dockerfile
-FROM node:18-bullseye-slim
+FROM node:18-alpine
 
 # Install necessary tools
-RUN apt-get update && apt-get install -y \
-    docker.io \
+RUN apk add --no-cache \
+    docker-cli \
     bash \
     sudo \
     acl \
     jq \
-    && rm -rf /var/lib/apt/lists/*
+    shadow
 
 # Install devcontainers CLI
 RUN npm install -g @devcontainers/cli

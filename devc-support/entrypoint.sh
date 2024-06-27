@@ -32,16 +32,16 @@ else
 fi
 
 # Handle user
-if id -u $LOCAL_USER_ID > /dev/null 2>&1; then
-    USER_NAME=$(id -nu $LOCAL_USER_ID)
+if getent passwd $LOCAL_USER_ID > /dev/null 2>&1; then
+    USER_NAME=$(getent passwd $LOCAL_USER_ID | cut -d: -f1)
     OLD_PRIMARY_GID=$(id -g $USER_NAME)
-    verbose_log "User with UID $LOCAL_USER_ID already exists: $USER_NAME"    
+    verbose_log "User with UID $LOCAL_USER_ID already exists: $USER_NAME"
     
-    # Add old primary group as secondary group if it's different
+    # Change primary group if different
     if [ "$OLD_PRIMARY_GID" != "$LOCAL_GROUP_ID" ]; then
-        verbose_log "Changing primary group of $LOCAL_USER_ID to $LOCAL_GROUP_ID"
+        verbose_log "Changing primary group of $USER_NAME to $LOCAL_GROUP_ID"
         usermod -g $LOCAL_GROUP_ID $USER_NAME
-        verbose_log "Adding additional group of old group $OLD_PRIMARY_GID to user $LOCAL_USER_ID"
+        verbose_log "Adding additional group of old group $OLD_PRIMARY_GID to user $USER_NAME"
         usermod -a -G $OLD_PRIMARY_GID $USER_NAME
     fi
 else

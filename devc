@@ -19,21 +19,40 @@ verbose_log() {
 
 # Function to find project root
 find_project_root() {
-    local dir="$PWD"
+    local curr_dir="$PWD"
+
+    local dir="$curr_dir"
     while [ "$dir" != "/" ]; do
         if [ -f "${dir}/devc" ] || [ -f "${dir}/.devc.yml" ] || [ -f "${dir}/devc.yml" ]; then
-            echo "$dir"
-            return 0
-        elif [ -d "${dir}/.devcontainer" ]; then
-            echo "$dir"
-            return 0
-        elif [ -d "${dir}/.git" ]; then
+            verbose_log "Found project root at $dir because of devc files"
             echo "$dir"
             return 0
         fi
         dir="$(dirname "$dir")"
     done
-    echo "$PWD"
+
+    local dir="$curr_dir"
+    while [ "$dir" != "/" ]; do
+        if [ -d "${dir}/.devcontainer" ]; then
+            verbose_log "Found project root at $dir because of .devcontainer"
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    local dir="$curr_dir"
+    while [ "$dir" != "/" ]; do
+        if [ -d "${dir}/.git" ]; then
+            verbose_log "Found project root at $dir because of .git"
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    verbose_log "Defaulting to project root in current directory"
+    echo "$curr_dir"
 }
 
 # Function to ensure Docker is installed and running

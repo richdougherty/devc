@@ -4,11 +4,11 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$SCRIPT_DIR"
+SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 DEVC_SUPPORT_IMAGE="devc-support:latest"
 VERBOSE=false
-CONTAINER_ID_FILE="$PROJECT_DIR/.devc/containerid"
+DEVC_HOME="${HOME}/.devc"
 
 # Function to log verbose messages
 verbose_log() {
@@ -17,121 +17,76 @@ verbose_log() {
     fi
 }
 
-# Function to run a command in the devc-support container
-run_in_devc_support() {
-    verbose_log "Running in devc-support: $*"
+# Function to find project root
+find_project_root() {
+    local dir="$PWD"
+    while [ "$dir" != "/" ]; do
+        if [ -f "${dir}/devc" ] || [ -f "${dir}/.devc.yml" ] || [ -f "${dir}/devc.yml" ]; then
+            echo "$dir"
+            return 0
+        elif [ -d "${dir}/.devcontainer" ]; then
+            echo "$dir"
+            return 0
+        elif [ -d "${dir}/.git" ]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    echo "$PWD"
+}
 
+# Function to ensure Docker is installed and running
+ensure_docker() {
+    if ! command -v docker &> /dev/null; then
+        echo "Error: Docker is not installed or not in PATH. Please install Docker and try again." >&2
+        exit 1
+    fi
+
+    if ! docker info &> /dev/null; then
+        echo "Error: Docker daemon is not running. Please start Docker and try again." >&2
+        exit 1
+    fi
+}
+
+# Function to run the devc-support container
+run_devc_support() {
+    local cmd="$1"
+    shift
+
+    verbose_log "Running devc-support container"
     if [ -t 0 ] && [ -t 1 ]; then
-        # We're in a TTY, use -it
         verbose_log "Running in interactive mode with TTY"
         terminal_opts="-it"
     else
-        # Not in a TTY, use -i for stdin
         verbose_log "Running in non-interactive mode"
         terminal_opts="-i"
     fi
 
     docker run --rm "$terminal_opts" \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "$PROJECT_DIR:$PROJECT_DIR" \
+        -v "${PROJECT_DIR}:${PROJECT_DIR}" \
+        -v "${DEVC_HOME}:${DEVC_HOME}" \
         -e DOCKER_HOST="unix:///var/run/docker.sock" \
         -e LOCAL_USER_ID="$(id -u)" \
         -e LOCAL_GROUP_ID="$(id -g)" \
         -e DEVC_VERBOSE="$VERBOSE" \
         -e PROJECT_DIR="$PROJECT_DIR" \
+        -e DEVC_HOME="$DEVC_HOME" \
         -w "$PROJECT_DIR" \
         "$DEVC_SUPPORT_IMAGE" \
-        "$@"
-}
-# Function to run devcontainer CLI
-run_devcontainer_cli() {
-    verbose_log "Running devcontainer CLI: $*"
-    run_in_devc_support devcontainer "$@"
+        $cmd "$@"
 }
 
-ensure_dev_container_running() {
-    verbose_log "Ensuring dev container is running"
-    if [ -f "$CONTAINER_ID_FILE" ]; then
-        container_id=$(cat "$CONTAINER_ID_FILE")
-        if docker ps -q --filter "id=$container_id" | grep -q .; then
-            verbose_log "Dev container is already running"
-            return 0
-        else
-            verbose_log "Stored container ID is not running, removing stale ID file"
-            rm "$CONTAINER_ID_FILE"
-        fi
-    fi
-
-    verbose_log "Starting dev container"
-    if ! run_in_devc_support devcontainer-up --workspace-folder "$PROJECT_DIR"; then
-        echo "Error: Failed to create or start the dev container" >&2
-        exit 1
-    fi
-}
-
-stop_dev_container() {
-    if [ -f "$CONTAINER_ID_FILE" ]; then
-        container_id=$(cat "$CONTAINER_ID_FILE")
-        echo "Stopping dev container: $container_id"
-        docker stop "$container_id"
-    else
-        echo "No running dev container found"
-    fi
-}
-
-down_dev_container() {
-    if [ -f "$CONTAINER_ID_FILE" ]; then
-        container_id=$(cat "$CONTAINER_ID_FILE")
-        echo "Stopping and removing dev container: $container_id"
-        docker stop "$container_id"
-        docker rm "$container_id"
-        rm "$CONTAINER_ID_FILE"
-    else
-        echo "No dev container found"
-    fi
-}
-
-inspect_dev_container() {
-    if [ -f "$CONTAINER_ID_FILE" ]; then
-        container_id=$(cat "$CONTAINER_ID_FILE")
-        verbose_log "Inspecting dev container: $container_id"
-        docker inspect "$container_id"
-    else
-        echo "No running dev container found"
-    fi
-}
-
-exec_dev_container() {
-    # Use devcontainer cli for now since it does lots of magic with
-    # users and mounts, etc. It's slower but it works. Later can figure
-    # out how to optimise it.
-    run_devcontainer_cli exec --workspace-folder "$PROJECT_DIR" "$@"
-}
-
-# Function to print help
-print_help() {
-    echo "Usage: devc [-v|--verbose] [COMMAND] [ARGS...]"
-    echo
-    echo "Commands:"
-    echo "  help                 Print this help message"
-    echo "  up                   Create and start the dev container"
-    echo "  down                 Stop and remove the dev container"
-    echo "  stop                 Stop the dev container"
-    echo "  exec <cmd> [args..]  Execute a command in the dev container"
-    echo "  inspect              Inspect the dev container"
-    echo "  devc-support-shell   Enter a shell in the devc-support container"
-    echo
-    echo "If no command is provided, it starts a bash shell in the dev container"
-    echo "Any other command is treated as an 'exec' command"
-    echo
-    echo "Options:"
-    echo "  -v, --verbose        Enable verbose logging"
-}
-# Parse verbose flag
+# Parse command line arguments
 while [[ "$1" == -* ]]; do
     case "$1" in
         -v|--verbose)
             VERBOSE=true
+            shift
+            ;;
+        --debug-support-shell)
+            DEBUG_SUPPORT_SHELL=true
             shift
             ;;
         *)
@@ -140,47 +95,21 @@ while [[ "$1" == -* ]]; do
     esac
 done
 
-verbose_log "Command: $1"
-verbose_log "All args: $*"
+# Ensure required directories exist
+mkdir -p "$DEVC_HOME"
 
-case "$1" in
-    help|-h|-help|--help)
-        print_help
-        ;;
-    up)
-        verbose_log "Creating and starting dev container..."
-        ensure_dev_container_running
-        ;;
-    stop)
-        stop_dev_container
-        ;;
-    down)
-        down_dev_container
-        ;;
-    exec)
-        shift
-        verbose_log "Running command in dev container: $*"
-        ensure_dev_container_running
-        exec_dev_container "$@"
-        ;;
-    inspect)
-        ensure_dev_container_running
-        inspect_dev_container
-        ;;
-    devc-support-shell)
-        verbose_log "Entering devc-support shell for debugging..."
-        run_in_devc_support bash
-        ;;
-    "")
-        # No arguments, start a bash shell in the dev container
-        verbose_log "Starting dev container and opening a bash shell..."
-        ensure_dev_container_running
-        exec_dev_container bash
-        ;;
-    *)
-        # Treat any unknown command as an 'exec' command
-        verbose_log "Running command in dev container: $*"
-        ensure_dev_container_running
-        exec_dev_container "$@"
-        ;;
-esac
+# Find project root
+PROJECT_DIR="$(find_project_root)"
+verbose_log "Project directory: $PROJECT_DIR"
+
+# Ensure Docker is installed and running
+ensure_docker
+
+# Run devc-backend in the devc-support container or debug support shell
+if [ "$DEBUG_SUPPORT_SHELL" = true ]; then
+    verbose_log "Running debug support shell"
+    run_devc_support bash
+else
+    verbose_log "Running devc-backend"
+    run_devc_support python3 /usr/local/bin/devc-backend.py "$@"
+fi

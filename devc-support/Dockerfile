@@ -7,7 +7,8 @@ RUN apk add --no-cache \
     sudo \
     acl \
     jq \
-    shadow
+    shadow \
+    python3
 
 # Install devcontainers CLI
 RUN npm install -g @devcontainers/cli
@@ -15,12 +16,10 @@ RUN npm install -g @devcontainers/cli
 # Create a workspace directory
 RUN mkdir -p /workspace && chmod 777 /workspace
 
-# Copy and set permissions for entrypoint script
+# Copy scripts
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-COPY devcontainer-up.sh /usr/local/bin/devcontainer-up
-RUN chmod +x /usr/local/bin/devcontainer-up
+COPY devc-backend.py /usr/local/bin/devc-backend.py
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/devc-backend.py
 
 WORKDIR /workspace
 

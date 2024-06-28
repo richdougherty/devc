@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     jq \
     shadow \
     python3 \
-    py3-pip
+    py3-yaml
 
 # Install devcontainers CLI
 RUN npm install -g @devcontainers/cli

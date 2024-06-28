@@ -1,4 +1,5 @@
-FROM node:18-alpine
+# Use a more recent Node.js version
+FROM node:20-alpine
 
 # Install necessary tools
 RUN apk add --no-cache \
@@ -8,18 +9,29 @@ RUN apk add --no-cache \
     acl \
     jq \
     shadow \
-    python3
+    python3 \
+    py3-pip
 
 # Install devcontainers CLI
 RUN npm install -g @devcontainers/cli
 
-# Create a workspace directory
-RUN mkdir -p /workspace && chmod 777 /workspace
+# Create necessary directories
+RUN mkdir -p /workspace /opt/devc
 
-# Copy scripts
+# Copy devc backend files
+COPY devc_backend.py /opt/devc/
+COPY commands /opt/devc/commands
+COPY utils /opt/devc/utils
+
+# Make sure the scripts are executable
+RUN chmod +x /opt/devc/devc_backend.py
+
+# Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY devc-backend.py /usr/local/bin/devc-backend.py
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/devc-backend.py
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Set up Python path
+ENV PYTHONPATH="/opt/devc:$PYTHONPATH"
 
 WORKDIR /workspace
 

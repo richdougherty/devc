@@ -130,5 +130,5 @@ if [ "$DEBUG_SUPPORT_SHELL" = true ]; then
     run_devc_support bash
 else
     verbose_log "Running devc-backend"
-    run_devc_support python3 /usr/local/bin/devc-backend.py "$@"
+    run_devc_support python3 /opt/devc/devc_backend.py "$@"
 fi

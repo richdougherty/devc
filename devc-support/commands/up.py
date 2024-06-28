@@ -1,4 +1,4 @@
-from utils import logging, container, devcontainer
+from utils import logging, container, devcontainer_config
 
 def add_parser(subparsers):
     parser = subparsers.add_parser("up", help="Create and start the dev container")

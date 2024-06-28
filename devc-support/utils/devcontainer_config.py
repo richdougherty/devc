@@ -2,7 +2,8 @@ import os
 import json
 import sys
 import yaml
-from . import env_utils, logging
+import hashlib
+from . import env_utils, logging, project_state
 
 def ensure_devcontainer_files_exist():
     logging.verbose_log(f"Checking for devcontainer files")
@@ -10,15 +11,31 @@ def ensure_devcontainer_files_exist():
     devcontainer_json_path = os.path.join(devcontainer_dir, 'devcontainer.json')
     devc_generate_yml_path = os.path.join(devcontainer_dir, 'devc-generate.yml')
 
-    if os.path.exists(devcontainer_json_path) and not os.path.exists(devc_generate_yml_path):
+    current_devc_generate_hash = get_devc_generate_hash()
+    current_devcontainer_json_hash = get_devcontainer_json_hash()
+
+    saved_devc_generate_hash = project_state.get_state_value('devc_generate_hash')
+    saved_devcontainer_json_hash = project_state.get_state_value('devcontainer_json_hash')
+
+    if current_devcontainer_json_hash is not None and current_devc_generate_hash is None:
         logging.verbose_log(f"devcontainer.json exists but devc-generate.yml not found. Skipping generation.")
+        project_state.set_state_value('devc_generate_hash', None)
+        project_state.set_state_value('devcontainer_json_hash', current_devcontainer_json_hash)
+        return
+    
+    if current_devcontainer_json_hash is not None and current_devcontainer_json_hash != saved_devcontainer_json_hash:
+        # TODO: Add force option to always rebuild
+        print('devcontainer.json has changed since devc was last run, cannot generate. Remove file and retry.', file=sys.stderr)
+        sys.exit(1)
+
+    if current_devcontainer_json_hash is not None and current_devc_generate_hash == saved_devc_generate_hash:
+        logging.verbose_log('devcontainer.json already exists and devc-generate.yml file has not changed, no need to regenerate')
         return
 
-    # It is safe to generate because we either have:
-    # - a devc-generate.yml file
-    # - no files at all
+    logging.verbose_log("Need to generate devcontainer.json file")
 
-    logging.verbose_log("Either found devc-generate.yml or missing a devcontainer.json, so will generate config.")
+    # Set to nonsense values first in case anything goes wrong, to force regeneration on re-run
+    project_state.set_state_value('devc_generate_hash', 'generating')
 
     if os.path.exists(devc_generate_yml_path):
         logging.verbose_log("Reading devc-generate.yml")
@@ -28,6 +45,10 @@ def ensure_devcontainer_files_exist():
     else:
         config = None # TODO: In the future might use different value for missing file since generation might be different
     generate_devcontainer_files(config)
+
+    new_devcontainer_json_hash = get_devcontainer_json_hash()
+    project_state.set_state_value('devcontainer_json_hash', new_devcontainer_json_hash)
+    project_state.set_state_value('devc_generate_hash', current_devc_generate_hash)
 
 def generate_devcontainer_files(config):
     generate_devcontainer_json(config)
@@ -69,6 +90,15 @@ def generate_dockerfile(config):
     # Placeholder for Dockerfile generation
     logging.verbose_log("Dockerfile generation not implemented yet.")
 
+def get_devc_generate_hash():
+    return get_file_hash(os.path.join(project_state.PROJECT_DIR, '.devcontainer', 'devc-generate.yml'))
+
+def get_devcontainer_json_hash():
+    return get_file_hash(os.path.join(project_state.PROJECT_DIR, '.devcontainer', 'devcontainer.json'))
+
+# File utils
+# TODO: maybe move to shared util if useful
+
 def open_file_create_dir(file_path, *open_args, **open_kwargs):
     """
     Open a file for reading or writing, creating the directory if it doesn't exist.
@@ -82,3 +112,9 @@ def open_file_create_dir(file_path, *open_args, **open_kwargs):
         os.makedirs(dir_path)
         logging.verbose_log(f"Created directory: {dir_path}")
     return open(file_path, *open_args, **open_kwargs)
+
+def get_file_hash(file_path):
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, 'rb') as f:
+        return hashlib.md5(f.read()).hexdigest()

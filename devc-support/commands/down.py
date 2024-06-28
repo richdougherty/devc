@@ -1,5 +1,5 @@
 import sys
-from utils import logging, container, subprocess_utils
+from utils import logging, container, project_state, subprocess_utils
 
 def add_parser(subparsers):
     parser = subparsers.add_parser("down", help="Stop and remove the dev container and its image")
@@ -21,4 +21,4 @@ def handle_down_command(args):
         logging.verbose_log('Container is already stopped')
 
     subprocess_utils.run_subprocess(['docker', 'rm', container_id], check=True, stdout=sys.stdout, stderr=sys.stderr)
-    container.remove_cached_containerid()
+    project_state.set_state_value('container_id', None)

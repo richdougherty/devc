@@ -45,6 +45,7 @@ def ensure_container_up():
             print('Running container is out of date because devcontainer.json has changed. Run "down" to remove and try again.', file=sys.stderr)
             sys.exit(1)
     elif status_value == 'stopped':
+        container_id = container_status['container_id']  # Get container_id from status
         container_devcontainer_json_hash = project_state.get_state_value('container_devcontainer_json_hash')
         logging.verbose_log(f'Container stopped, built from devcontainer.json: {container_devcontainer_json_hash}')
         if devcontainer_json_hash != container_devcontainer_json_hash:
